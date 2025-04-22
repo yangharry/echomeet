@@ -38,7 +38,7 @@ interface ClientToServerEvents {
 }
 
 // Vite 환경 변수에서 서버 URL 가져오기 (기본값 설정)
-const API_URL = import.meta.env.VITE_API_URL || 'http://192.168.0.47:3000';
+const API_URL = import.meta.env.VITE_API_URL;
 
 /**
  * 소켓 서비스 클래스
