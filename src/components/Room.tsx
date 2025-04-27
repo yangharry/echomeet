@@ -9,16 +9,19 @@ import {
   VideoCameraSlashIcon, // 카메라 끄기 아이콘
   MicrophoneIcon, // 마이크 켜기 아이콘
   SpeakerXMarkIcon, // 마이크 끄기 아이콘
-  ChatBubbleLeftIcon, // 채팅 아이콘
   ArrowLeftIcon, // 뒤로가기 아이콘
   ComputerDesktopIcon, // 화면 공유 아이콘
   PresentationChartLineIcon, // 프레젠테이션 아이콘
+  ChatBubbleLeftRightIcon, // 채팅 아이콘
+  ClipboardDocumentIcon, // 복사 아이콘 추가
 } from '@heroicons/react/24/solid';
 import Chat from './Chat';
-import { toggleChat, setChatOpen } from '../store/slices/chatSlice';
+import { setChatOpen } from '../store/slices/chatSlice';
 import toast from 'react-hot-toast';
 import { socketService } from '../services/socket';
 import { webRTCService } from '../services/webrtc';
+import { Socket } from 'socket.io-client';
+import { addMessage } from '../store/slices/chatSlice';
 
 /**
  * Room 컴포넌트: 화상 회의방 기능을 제공하는 메인 컴포넌트
@@ -46,6 +49,9 @@ export default function Room() {
   const [videoDisplayMode, setVideoDisplayMode] = useState<'cover' | 'contain'>('cover'); // 비디오 표시 모드
   const [showLocalControls, setShowLocalControls] = useState(false); // 로컬 비디오 컨트롤 표시 여부
   const [hoveredPeer, setHoveredPeer] = useState<string | null>(null); // 마우스 오버된 피어 ID
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth); // 창 너비 상태 추가
+  const [showChat, setShowChat] = useState<boolean>(false); // 채팅 패널 표시 여부
+  const [socket, setSocket] = useState<Socket | null>(null);
 
   // 원격 피어 상태 변경 로깅
   useEffect(() => {
@@ -55,16 +61,17 @@ export default function Room() {
   // 컴포넌트 마운트 시 소켓 연결 및 미디어 장치 초기화
   useEffect(() => {
     // 소켓 연결 설정
-    const socket = socketService.connect();
-    console.log('Room 컴포넌트: 소켓 연결 시도', socket ? '성공' : '실패');
+    const socketInstance = socketService.connect();
+    setSocket(socketInstance);
+    console.log('Room 컴포넌트: 소켓 연결 시도', socketInstance ? '성공' : '실패');
 
     // WebRTC 서비스 초기화
-    webRTCService.initialize(socket);
+    webRTCService.initialize(socketInstance);
     console.log('Room 컴포넌트: WebRTC 서비스 초기화 완료');
 
     // 참가자 수 업데이트 이벤트 리스너 등록
-    if (socket) {
-      socket.on('participant-count', (count) => {
+    if (socketInstance) {
+      socketInstance.on('participant-count', (count) => {
         setParticipantCount(count);
       });
     }
@@ -192,6 +199,25 @@ export default function Room() {
     };
   }, [roomId, userId, nickname]);
 
+  // 소켓 이벤트 리스너 설정 및 정리
+  useEffect(() => {
+    // 채팅 메시지 수신 이벤트 핸들러 등록
+    if (socket) {
+      const handleReceiveMessage = (message: { id: string; senderId: string; senderNickname: string; content: string; timestamp: number }) => {
+        console.log('수신된 메시지:', message);
+        dispatch(addMessage(message));
+      };
+
+      // 'receiveMessage' 이벤트 리스너 등록
+      socket.on('receiveMessage', handleReceiveMessage);
+
+      // 컴포넌트 언마운트 시 이벤트 리스너 정리
+      return () => {
+        socket.off('receiveMessage', handleReceiveMessage);
+      };
+    }
+  }, [socket, dispatch]);
+
   // 로그인 상태 확인 - 로그인되지 않은 경우 홈으로 리다이렉트
   useEffect(() => {
     if (!isLoggedIn) navigate('/');
@@ -211,6 +237,23 @@ export default function Room() {
     }
   }, [isMicOn, localStream]);
 
+  // 창 크기 변경 감지
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+
+      // 작은 화면에서 채팅이 열려있으면 닫기 (888px 이하)
+      if (window.innerWidth <= 888 && isOpen) {
+        dispatch(setChatOpen(false));
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [isOpen, dispatch]);
+
   /**
    * 화면 공유 시작/중지 함수
    * - 현재 화면 공유 중이 아니면 화면 공유 시작
@@ -218,7 +261,31 @@ export default function Room() {
    */
   const handleScreenShare = async () => {
     try {
-      if (!isScreenSharing) {
+      if (isScreenSharing) {
+        // 화면 공유 중지 시
+        console.log('화면 공유 중지');
+
+        // 기존 스크린 트랙 중지
+        if (localStream) {
+          localStream.getTracks().forEach((track) => track.stop());
+          setLocalStream(null);
+        }
+
+        // 카메라 비디오가 있는 경우 해당 트랙에 대한 비디오 활성화 처리
+        const videoTrack = localStream?.getVideoTracks()[0];
+        if (videoTrack && isCameraOn) {
+          videoTrack.enabled = true;
+          console.log('카메라 비디오 재활성화');
+
+          // WebRTC 서비스에 로컬 스트림 다시 설정하여 업데이트
+          if (localStream) {
+            await webRTCService.setLocalStream(localStream);
+          }
+        }
+
+        setIsScreenSharing(false);
+      } else {
+        // 화면 공유 시작 시
         console.log('화면 공유 시작');
         // 기존 로컬 스트림 트랙 중지
         if (localStream) {
@@ -228,7 +295,12 @@ export default function Room() {
         try {
           // 간소화된 화면 공유 설정
           const screenStream = await navigator.mediaDevices.getDisplayMedia({
-            video: true,
+            video: {
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+              frameRate: { ideal: 30 },
+              displaySurface: 'monitor',
+            },
             audio: false,
           });
 
@@ -271,9 +343,6 @@ export default function Room() {
 
           handleStopScreenShare();
         }
-      } else {
-        // 이미 화면 공유 중이면 중지
-        handleStopScreenShare();
       }
     } catch (error) {
       console.error('화면 공유 오류:', error);
@@ -299,15 +368,22 @@ export default function Room() {
       toast.success('화면 공유가 중단되었습니다.');
 
       try {
-        // 간소화된 카메라 설정으로 재시도
+        // 카메라 설정에 고정 해상도 추가
         const cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 },
+            aspectRatio: { ideal: 16 / 9 },
+          },
           audio: true,
         });
 
         // 카메라 활성화 상태 적용
         cameraStream.getVideoTracks().forEach((track) => {
           track.enabled = isCameraOn;
+          // 비디오 트랙 제약 조건 확인 및 로깅
+          console.log('카메라 복구 - 비디오 트랙 설정:', track.getSettings());
         });
 
         cameraStream.getAudioTracks().forEach((track) => {
@@ -444,39 +520,69 @@ export default function Room() {
   // 로그인되지 않은 경우 렌더링하지 않음
   if (!isLoggedIn) return null;
 
+  // 채팅 토글 함수
+  const handleToggleChat = () => {
+    // 화면이 좁을 때(888px 이하) 채팅을 열 때 경고 표시
+    if (!showChat && windowWidth <= 888) {
+      toast('작은 화면에서는 채팅창이 영상을 가릴 수 있습니다', {
+        icon: '📱',
+        duration: 3000,
+      });
+    }
+    setShowChat(!showChat);
+  };
+
+  // 방 ID 복사 함수 추가
+  const copyRoomId = () => {
+    navigator.clipboard.writeText(roomId || '');
+    toast.success('룸 ID가 클립보드에 복사되었습니다', {
+      duration: 2000,
+    });
+  };
+
   return (
-    <div className="h-screen bg-gradient-to-b from-slate-50 to-slate-100 dark:from-gray-900 dark:to-gray-800 text-gray-900 dark:text-white">
-      <div className="h-full flex flex-col">
+    <div className="h-screen w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-gray-900 dark:to-gray-800 text-gray-900 dark:text-white">
+      <div className="h-full  w-full flex flex-col">
         {/* 상단 헤더 영역 */}
-        <div className="px-6 py-4 bg-white/70 dark:bg-gray-800/70 backdrop-blur-lg border-b border-gray-200 dark:border-gray-700">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
+        <div className="w-full px-6 py-4 bg-white/70 dark:bg-gray-800/70 backdrop-blur-lg border-b border-gray-200 dark:border-gray-700">
+          <div className="w-full flex items-center justify-between">
             {/* 왼쪽: 뒤로가기 버튼과 방 정보 */}
-            <div className="flex items-center space-x-4">
-              <button onClick={handleLeaveRoom} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+            <div className="w-[calc(80%-44px)] flex items-center">
+              <button onClick={handleLeaveRoom} className="mr-2 p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                 <ArrowLeftIcon className="w-5 h-5" />
               </button>
-              <div>
-                <h1 className="text-lg font-semibold">EchoMeet</h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Room: {roomId} • 참가자: {participantCount}명
-                </p>
+              <div className="w-full flex flex-col items-center ">
+                <h1 className="w-full text-lg font-semibold flex items-center">
+                  EchoMeet <span className="text-sm text-gray-500 dark:text-gray-400">• 참가자: {participantCount}명</span>
+                </h1>
+                <div className="w-full text-sm text-gray-500 dark:text-gray-400 flex items-center">
+                  <span className="w-[calc(100%-20px)] max-w-[344px] truncate inline-block">Room: {roomId} </span>
+                  <button onClick={copyRoomId} className="pl-1 inline-block hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors" title="룸 ID 복사하기">
+                    <ClipboardDocumentIcon className="w-4 h-4 text-gray-400 hover:text-indigo-500" />
+                  </button>
+                </div>
               </div>
             </div>
             {/* 오른쪽: 사용자 닉네임 표시 */}
-            <div className="flex items-center">
-              <span className="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm font-medium">{nickname}</span>
+            <div className="w-[20%] flex items-center  justify-end">
+              <span className="px-2 py-1 sm:px-4 sm:py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm font-medium truncate max-w-[80px] sm:max-w-none">{nickname}</span>
             </div>
           </div>
         </div>
 
         {/* 메인 콘텐츠 영역: 비디오와 채팅 */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden min-w-[320px]">
           {/* 비디오 그리드 */}
-          <div className="flex-1 p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="flex-1 p-1 sm:p-2 md:p-4 overflow-auto">
+            <div
+              className={`grid grid-cols-1 sm:grid-cols-1 ${
+                showChat ? 'md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4' : 'md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+              } gap-2 sm:gap-4`}
+            >
               {/* 로컬 비디오 컨테이너 */}
               <div
-                className="relative rounded-2xl overflow-hidden bg-gray-200 dark:bg-gray-700 shadow-lg aspect-video"
+                className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-gray-200 dark:bg-gray-700 shadow-lg aspect-video w-full"
+                style={{ minHeight: '120px', maxHeight: '80vh', maxWidth: '100%' }}
                 onMouseEnter={() => setShowLocalControls(true)}
                 onMouseLeave={() => setShowLocalControls(false)}
               >
@@ -493,6 +599,7 @@ export default function Room() {
                   autoPlay
                   muted
                   className={`w-full h-full object-${videoDisplayMode}`}
+                  style={{ minWidth: '100%', minHeight: '100%', maxWidth: '100%' }}
                   onDoubleClick={handleVideoDoubleClick}
                 />
                 {/* 사용자 이름 및 마이크 상태 표시 */}
@@ -546,7 +653,8 @@ export default function Room() {
                 return (
                   <div
                     key={userId}
-                    className="relative rounded-2xl overflow-hidden bg-gray-200 dark:bg-gray-700 shadow-lg aspect-video"
+                    className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-gray-200 dark:bg-gray-700 shadow-lg aspect-video w-full"
+                    style={{ minHeight: '120px', maxHeight: '80vh', maxWidth: '100%' }}
                     onMouseEnter={() => setHoveredPeer(userId)}
                     onMouseLeave={() => setHoveredPeer(null)}
                   >
@@ -566,6 +674,7 @@ export default function Room() {
                         data-peer-id={userId}
                         autoPlay
                         className={`w-full h-full object-${videoDisplayMode}`}
+                        style={{ minWidth: '100%', minHeight: '100%', maxWidth: '100%' }}
                         onDoubleClick={handleVideoDoubleClick}
                       />
                     ) : (
@@ -588,7 +697,7 @@ export default function Room() {
                     </div>
 
                     {/* 마우스 호버 시 나타나는 컨트롤 */}
-                    {hoveredPeer === userId && hasVideo && (
+                    {hoveredPeer === userId && (
                       <div className="absolute top-2 right-2 flex space-x-2 transition-opacity duration-300">
                         {/* 비디오 표시 모드 전환 버튼 */}
                         <button
@@ -627,9 +736,16 @@ export default function Room() {
           </div>
 
           {/* 채팅 패널 */}
-          {isOpen && (
-            <div className="w-96 border-l border-gray-200 dark:border-gray-700">
-              <Chat onClose={() => dispatch(toggleChat())} socket={socketService.getSocket()!} roomId={roomId!} />
+          {showChat && (
+            <div
+              style={{
+                position: windowWidth <= 636 ? 'absolute' : 'relative',
+                right: windowWidth <= 636 ? '8px' : '',
+                height: windowWidth <= 636 ? 'calc(100% - 170px)' : 'auto',
+              }}
+              className="bg-white dark:bg-gray-900 shadow-lg transition-all transform w-[300px]"
+            >
+              <Chat onClose={() => setShowChat(false)} roomId={roomId || ''} />
             </div>
           )}
         </div>
@@ -672,13 +788,13 @@ export default function Room() {
 
             {/* 채팅 토글 버튼 */}
             <button
-              onClick={() => dispatch(toggleChat())}
+              onClick={handleToggleChat}
               className={`p-4 rounded-xl transition-all ${
-                isOpen ? 'bg-indigo-500 hover:bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+                showChat ? 'bg-indigo-500 hover:bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
               }`}
-              title={isOpen ? '채팅 닫기' : '채팅 열기'}
+              title={showChat ? '채팅 닫기' : '채팅 열기'}
             >
-              <ChatBubbleLeftIcon className="w-6 h-6 text-blue-500" />
+              <ChatBubbleLeftRightIcon className={`w-6 h-6 ${showChat ? 'text-white' : 'text-indigo-500'}`} />
             </button>
           </div>
         </div>

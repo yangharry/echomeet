@@ -38,7 +38,7 @@ interface ClientToServerEvents {
 }
 
 // Vite 환경 변수에서 서버 URL 가져오기 (기본값 설정)
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 /**
  * 소켓 서비스 클래스
@@ -49,6 +49,8 @@ const API_URL = import.meta.env.VITE_API_URL;
 class SocketService {
   // 소켓 인스턴스 (연결되지 않은 경우 null)
   private socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
+  // 현재 사용자의 ID 저장
+  private userId: string = '';
 
   /**
    * 소켓 서버에 연결하는 메서드
@@ -109,6 +111,8 @@ class SocketService {
       console.error('소켓이 연결되지 않았습니다. 방 입장 실패.');
       return;
     }
+    // 사용자 ID 저장
+    this.userId = userId;
     console.log(`방 입장 시도: ${roomId}, 사용자: ${nickname}(${userId})`);
     this.socket.emit('join-room', { roomId, userId, nickname });
   }
@@ -179,6 +183,14 @@ class SocketService {
   disconnect() {
     this.socket?.disconnect();
     this.socket = null;
+  }
+
+  /**
+   * 현재 사용자의 ID를 반환하는 메서드
+   * @returns 사용자 ID 또는 빈 문자열
+   */
+  getUserId(): string {
+    return this.userId;
   }
 }
 

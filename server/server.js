@@ -93,8 +93,8 @@ io.on('connection', (socket) => {
       // 기존 참가자 중 동일한 userId를 가진 사용자 찾기
       const existingParticipants = rooms.get(roomId);
       for (const [existingUserId, data] of existingParticipants.entries()) {
-        if (existingUserId === userId && data.socketId === socket.id) {
-          // 동일한 userId와 socketId를 가진 사용자를 찾음 (재접속)
+        if (existingUserId === userId) {
+          // 동일한 userId를 가진 사용자를 찾음 (재접속)
           oldSocketId = data.socketId;
           console.log(`User ${userId} is reconnecting, old socket: ${oldSocketId}, new socket: ${socket.id}`);
           isRejoin = true;
@@ -171,7 +171,8 @@ io.on('connection', (socket) => {
     }
 
     // 사용자 매핑 제거
-    userSocketMap.delete(userId);
+    [...userSocketMap.entries()].filter(([, sid]) => sid === socket.id).forEach(([uid]) => userSocketMap.delete(uid));
+
     // 다른 참가자들에게 사용자 퇴장 알림
     socket.to(roomId).emit('userLeft', { userId });
     // 소켓을 방에서 제거
@@ -201,23 +202,25 @@ io.on('connection', (socket) => {
     if (targetSocketId) {
       console.log(`신호 전달: ${from} -> ${to}, 타겟 소켓: ${targetSocketId}`);
 
-      // from에 해당하는 userId 찾기
-      let fromUserId = null;
+      // from은 이미 userId 이므로 그대로 사용
+      let fromUserId = from;
 
-      // 모든 방을 검색하여 사용자 찾기
+      // userId가 실제로 존재하는지 확인 (선택적)
+      let isValidUser = false;
       for (const [roomId, participants] of rooms.entries()) {
-        for (const [userId, data] of participants.entries()) {
-          if (data.socketId === from) {
-            fromUserId = userId;
-            break;
-          }
+        if (participants.has(fromUserId)) {
+          isValidUser = true;
+          break;
         }
-        if (fromUserId) break;
+      }
+
+      if (!isValidUser) {
+        console.warn(`알 수 없는 출처의 신호: ${fromUserId}. 하지만 그대로 전달합니다.`);
       }
 
       // 시그널 데이터 전송
       io.to(targetSocketId).emit('signal', {
-        from: fromUserId || from, // userId가 있으면 사용, 없으면 socketId 사용
+        from: fromUserId,
         signal,
       });
     } else {
@@ -252,11 +255,7 @@ io.on('connection', (socket) => {
     });
 
     // 사용자 매핑 제거
-    userSocketMap.forEach((socketId, userId) => {
-      if (socketId === socket.id) {
-        userSocketMap.delete(userId);
-      }
-    });
+    [...userSocketMap.entries()].filter(([, sid]) => sid === socket.id).forEach(([uid]) => userSocketMap.delete(uid));
   });
 
   // 재연결 시도 이벤트 처리
@@ -288,13 +287,11 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
-const HOST = '0.0.0.0'; // 모든 IP에서 접속 허용
+const PORT = 3000;
 
-server.listen(PORT, HOST, () => {
+server.listen(PORT, () => {
   console.log(`== EchoMeet 서버가 시작되었습니다 ==`);
   console.log(`http://localhost:${PORT} 에서 서버 실행 중`);
-  console.log(`현재 서버 IP: ${HOST}`);
   console.log(`현재 시간: ${new Date().toISOString()}`);
   console.log('=================================');
 });

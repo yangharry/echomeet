@@ -4,7 +4,6 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Socket } from 'socket.io-client';
 import { RootState } from '../store';
 import { addMessage } from '../store/slices/chatSlice';
 import { XMarkIcon, PaperAirplaneIcon } from '@heroicons/react/24/solid'; // 닫기 및 메시지 전송 아이콘
@@ -14,6 +13,19 @@ import { v4 as uuidv4 } from 'uuid'; // 고유 ID 생성 라이브러리
 import { socketService } from '../services/socket';
 
 /**
+ * Message 인터페이스 - 채팅 메시지 타입 정의
+ */
+export interface Message {
+  id: string;
+  senderId: string;
+  userId: string;
+  senderNickname?: string;
+  nickname?: string;
+  content: string;
+  timestamp: number;
+}
+
+/**
  * 채팅 컴포넌트 Props 인터페이스
  * @property onClose - 채팅창 닫기 이벤트 핸들러
  * @property socket - 소켓.IO 클라이언트 객체
@@ -21,7 +33,6 @@ import { socketService } from '../services/socket';
  */
 interface ChatProps {
   onClose: () => void;
-  socket: Socket;
   roomId: string;
 }
 
@@ -31,7 +42,7 @@ interface ChatProps {
  * - 메시지 목록 표시 및 스크롤 자동화
  * - 사용자 구분 및 시간 표시
  */
-export default function Chat({ onClose, socket, roomId }: ChatProps) {
+export default function Chat({ onClose, roomId }: ChatProps) {
   const dispatch = useDispatch();
   // Redux 상태에서 메시지 목록 및 사용자 정보 가져오기
   const { messages } = useSelector((state: RootState) => state.chat);
@@ -47,25 +58,6 @@ export default function Chat({ onClose, socket, roomId }: ChatProps) {
     // 메시지가 추가될 때마다 스크롤을 아래로 이동
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  // 소켓 이벤트 리스너 설정 및 정리
-  useEffect(() => {
-    // 채팅 메시지 수신 이벤트 핸들러 등록
-    if (socket) {
-      const handleReceiveMessage = (message: { id: string; senderId: string; senderNickname: string; content: string; timestamp: number }) => {
-        console.log('수신된 메시지:', message);
-        dispatch(addMessage(message));
-      };
-
-      // 'receiveMessage' 이벤트 리스너 등록
-      socket.on('receiveMessage', handleReceiveMessage);
-
-      // 컴포넌트 언마운트 시 이벤트 리스너 정리
-      return () => {
-        socket.off('receiveMessage', handleReceiveMessage);
-      };
-    }
-  }, [socket, dispatch]);
 
   /**
    * 메시지 전송 함수
@@ -91,33 +83,35 @@ export default function Chat({ onClose, socket, roomId }: ChatProps) {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" style={{ position: 'relative', zIndex: 50 }}>
       {/* 채팅 헤더 */}
-      <div className="border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex justify-between items-center">
-        <h3 className="font-medium">채팅</h3>
+      <div className="border-b border-gray-200 dark:border-gray-700 px-3 py-2 flex justify-between items-center">
+        <h3 className="font-medium text-sm sm:text-base">채팅</h3>
         <button onClick={onClose} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-          <XMarkIcon className="w-5 h-5" />
+          <XMarkIcon className="w-4 h-4 sm:w-5 sm:h-5" />
         </button>
       </div>
 
       {/* 메시지 목록 영역 */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2 sm:space-y-3">
         {messages.length === 0 ? (
           // 메시지가 없는 경우 안내 문구 표시
-          <div className="text-center text-gray-500 dark:text-gray-400 py-4">첫 메시지를 보내보세요!</div>
+          <div className="text-center text-gray-500 dark:text-gray-400 py-4 text-xs sm:text-sm">첫 메시지를 보내보세요!</div>
         ) : (
           // 메시지 목록 렌더링
           messages.map((message) => (
             <div
               key={message.id}
-              className={`max-w-[80%] ${message.senderId === userId ? 'ml-auto bg-indigo-500 text-white' : 'bg-gray-100 dark:bg-gray-700 dark:text-white'} rounded-lg px-4 py-2`}
+              className={`max-w-[85%] ${
+                message.senderId === userId ? 'ml-auto bg-indigo-500 text-white' : 'bg-gray-100 dark:bg-gray-700 dark:text-white'
+              } rounded-lg px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm`}
             >
               {/* 다른 사용자의 메시지인 경우 발신자 닉네임 표시 */}
-              {message.senderId !== userId && <div className="font-medium text-xs mb-1">{message.senderNickname}</div>}
+              {message.senderId !== userId && <div className="font-medium text-xs mb-0.5">{message.senderNickname}</div>}
               {/* 메시지 내용 */}
               <div className="break-words">{message.content}</div>
               {/* 메시지 전송 시간 (한국어 형식) */}
-              <div className="text-xs mt-1 opacity-70">{format(new Date(message.timestamp), 'p', { locale: ko })}</div>
+              <div className="text-[10px] sm:text-xs mt-0.5 sm:mt-1 opacity-70">{format(new Date(message.timestamp), 'p', { locale: ko })}</div>
             </div>
           ))
         )}
@@ -126,17 +120,17 @@ export default function Chat({ onClose, socket, roomId }: ChatProps) {
       </div>
 
       {/* 메시지 입력 폼 */}
-      <form onSubmit={sendMessage} className="border-t border-gray-200 dark:border-gray-700 p-3 flex items-center">
+      <form onSubmit={sendMessage} className="border-t border-gray-200 dark:border-gray-700 p-2 sm:p-3 flex items-center">
         <input
           type="text"
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           placeholder="메시지를 입력하세요..."
-          className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+          className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
         />
         {/* 전송 버튼 - 입력 내용이 없으면 비활성화 */}
-        <button type="submit" disabled={!inputMessage.trim()} className="ml-2 p-2 bg-indigo-500 text-white rounded-full disabled:opacity-50">
-          <PaperAirplaneIcon className="w-5 h-5" />
+        <button type="submit" disabled={!inputMessage.trim()} className="ml-1 sm:ml-2 p-1.5 sm:p-2 bg-indigo-500 text-white rounded-full disabled:opacity-50">
+          <PaperAirplaneIcon className="w-4 h-4 sm:w-5 sm:h-5" />
         </button>
       </form>
     </div>
