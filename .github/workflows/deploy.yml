@@ -42,7 +42,7 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
 
-      # 도커이미지 Oracle 에서 pull 그리고 컨테이너 실행
+      # 도커이미지 Oracle 에서 pull 그리고 컨테이너 실행2
       - name: Deploy to OCI
         uses: appleboy/ssh-action@master
         with:
