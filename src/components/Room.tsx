@@ -268,8 +268,8 @@ export default function Room() {
 
         // 기존 스크린 트랙 중지
         if (localStream) {
-          localStream.getTracks().forEach((track) => track.stop());
-          setLocalStream(null);
+          // 비디오 트랙만 중지 (오디오 트랙은 유지)
+          localStream.getVideoTracks().forEach((track) => track.stop());
         }
 
         // 카메라 비디오가 있는 경우 해당 트랙에 대한 비디오 활성화 처리
@@ -288,9 +288,13 @@ export default function Room() {
       } else {
         // 화면 공유 시작 시
         console.log('화면 공유 시작');
-        // 기존 로컬 스트림 트랙 중지
+
+        // 기존 오디오 트랙 보존을 위해 변수에 저장
+        const existingAudioTracks = localStream ? localStream.getAudioTracks() : [];
+
+        // 기존 비디오 트랙만 중지
         if (localStream) {
-          localStream.getTracks().forEach((track) => track.stop());
+          localStream.getVideoTracks().forEach((track) => track.stop());
         }
 
         try {
@@ -312,6 +316,11 @@ export default function Room() {
             console.log('사용자가 화면 공유를 중단함');
             handleStopScreenShare();
           };
+
+          // 기존 오디오 트랙을 화면 공유 스트림에 추가
+          existingAudioTracks.forEach((track) => {
+            screenStream.addTrack(track);
+          });
 
           // 로컬 스트림 업데이트 및 화면 공유 상태 설정
           setLocalStream(screenStream);
@@ -357,9 +366,14 @@ export default function Room() {
   const handleStopScreenShare = async () => {
     try {
       console.log('화면 공유 중단');
-      // 기존 스트림 트랙 중지
+
+      // 기존 오디오 트랙 보존
+      const existingAudioTracks = localStream ? localStream.getAudioTracks() : [];
+      const isMicEnabled = existingAudioTracks.length > 0 ? existingAudioTracks[0].enabled : isMicOn;
+
+      // 기존 스트림 비디오 트랙만 중지
       if (localStream) {
-        localStream.getTracks().forEach((track) => {
+        localStream.getVideoTracks().forEach((track) => {
           track.stop();
         });
       }
@@ -377,7 +391,7 @@ export default function Room() {
             frameRate: { ideal: 30 },
             aspectRatio: { ideal: 16 / 9 },
           },
-          audio: true,
+          audio: existingAudioTracks.length === 0, // 기존 오디오 트랙이 없을 때만 오디오 요청
         });
 
         // 카메라 활성화 상태 적용
@@ -387,8 +401,14 @@ export default function Room() {
           console.log('카메라 복구 - 비디오 트랙 설정:', track.getSettings());
         });
 
+        // 기존 오디오 트랙을 새 스트림에 추가
+        existingAudioTracks.forEach((track) => {
+          cameraStream.addTrack(track);
+        });
+
+        // 오디오 트랙에 마이크 상태 적용
         cameraStream.getAudioTracks().forEach((track) => {
-          track.enabled = isMicOn;
+          track.enabled = isMicEnabled;
         });
 
         // 로컬 스트림 업데이트
@@ -688,7 +708,7 @@ export default function Room() {
                           autoPlay
                           playsInline
                         />
-                        // 비디오 트랙이 없는 경우 아바타 표시
+                        {/* 비디오 트랙이 없는 경우 아바타 표시 */}
                         <div className="absolute inset-0 flex items-center justify-center bg-gray-800/80 backdrop-blur-sm">
                           <div className="text-center">
                             <div className="w-20 h-20 mx-auto mb-2 rounded-full bg-gray-700 flex items-center justify-center">
