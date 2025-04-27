@@ -323,7 +323,7 @@ class WebRTCService {
 
       // 디버깅을 위한 알림 사용
       try {
-        toast(`${nickname}님이 입장했습니다.`);
+        console.log('알림 표시 중...');
       } catch (e) {
         console.error('알림 표시 오류:', e);
       }
@@ -340,7 +340,6 @@ class WebRTCService {
         if (this.localStream) {
           try {
             await this.initiateCall(userId);
-            toast(`${nickname}님이 입장했습니다.`);
           } catch {
             // 실패한 경우 보류 대기열에 추가
             this.pendingConnections.add(userId);

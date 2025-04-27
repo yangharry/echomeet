@@ -2,6 +2,8 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import path from 'path';
+const __dirname = path.resolve();
 
 const app = express();
 app.use(
@@ -12,15 +14,12 @@ app.use(
   })
 );
 
-// 기본 라우트 설정 (서버 상태 확인용)
-app.get('/', (req, res) => {
-  res.send({
-    status: 'ok',
-    message: 'EchoMeet 서버가 실행 중입니다.',
-    version: '1.0.0',
-    rooms: Array.from(rooms.keys()),
-    activeUsers: userSocketMap.size,
-  });
+// 정적 파일 제공 - 빌드된 클라이언트 파일
+app.use(express.static(path.join(__dirname, 'public')));
+
+// 모든 경로에서 index.html 제공 (SPA 지원)
+app.get('/', function (req, res) {
+  res.sendFile(path.join(__dirname, 'public/index.html'));
 });
 
 // 방 정보를 반환하는 API
@@ -61,6 +60,14 @@ app.get('/api/rooms', (req, res) => {
     rooms: activeRooms,
     count: activeRooms.length,
   });
+});
+
+// 클라이언트 라우트 처리 (SPA를 위한 모든 경로에서 index.html 제공)
+app.get('*', (req, res) => {
+  // API 라우트는 제외
+  if (!req.path.startsWith('/api/')) {
+    res.sendFile(path.join(__dirname, 'public/index.html'));
+  }
 });
 
 const server = createServer(app);

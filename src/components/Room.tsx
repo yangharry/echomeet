@@ -151,6 +151,7 @@ export default function Room() {
             video: false,
             audio: true,
           });
+          socketService.joinRoom(roomId!, userId, nickname);
 
           setLocalStream(audioOnlyStream);
           setIsCameraOn(false);
