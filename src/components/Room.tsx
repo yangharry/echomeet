@@ -679,15 +679,25 @@ export default function Room() {
                         onDoubleClick={handleVideoDoubleClick}
                       />
                     ) : (
-                      // 비디오 트랙이 없는 경우 아바타 표시
-                      <div className="absolute inset-0 flex items-center justify-center bg-gray-800/80 backdrop-blur-sm">
-                        <div className="text-center">
-                          <div className="w-20 h-20 mx-auto mb-2 rounded-full bg-gray-700 flex items-center justify-center">
-                            <span className="text-2xl font-bold text-white">{nickname.substring(0, 1)}</span>
+                      <>
+                        {/* ⬇︎ 오디오만 받는 경우 재생용 태그 */}
+                        <audio
+                          ref={(a) => {
+                            if (a && a.srcObject !== stream) a.srcObject = stream;
+                          }}
+                          autoPlay
+                          playsInline
+                        />
+                        // 비디오 트랙이 없는 경우 아바타 표시
+                        <div className="absolute inset-0 flex items-center justify-center bg-gray-800/80 backdrop-blur-sm">
+                          <div className="text-center">
+                            <div className="w-20 h-20 mx-auto mb-2 rounded-full bg-gray-700 flex items-center justify-center">
+                              <span className="text-2xl font-bold text-white">{nickname.substring(0, 1)}</span>
+                            </div>
+                            <span className="text-white font-medium px-4 py-2 rounded-lg bg-gray-900/50">{nickname}</span>
                           </div>
-                          <span className="text-white font-medium px-4 py-2 rounded-lg bg-gray-900/50">{nickname}</span>
                         </div>
-                      </div>
+                      </>
                     )}
                     {/* 사용자 이름 및 마이크 상태 표시 */}
                     <div className="absolute bottom-4 left-4 px-4 py-2 bg-black/50 backdrop-blur-md rounded-xl">
