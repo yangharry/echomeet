@@ -94,22 +94,24 @@ io.on('connection', (socket) => {
 
     // 재접속 여부 확인 (페이지 새로고침 등)
     let isRejoin = false;
-    let oldSocketId = null;
 
     if (rooms.has(roomId)) {
-      // 기존 참가자 중 동일한 userId를 가진 사용자 찾기
-      const existingParticipants = rooms.get(roomId);
-      for (const [existingUserId, data] of existingParticipants.entries()) {
-        if (existingUserId === userId) {
-          // 동일한 userId를 가진 사용자를 찾음 (재접속)
-          oldSocketId = data.socketId;
-          console.log(`User ${userId} is reconnecting, old socket: ${oldSocketId}, new socket: ${socket.id}`);
-          isRejoin = true;
+      const participants = rooms.get(roomId);
 
-          // 기존 연결 정보 제거
-          existingParticipants.delete(existingUserId);
-          break;
-        }
+      // 같은 userId 가 이미 방에 있으면 => 재접속(새로고침)
+      if (participants.has(userId)) {
+        const { socketId: oldSocketId } = participants.get(userId);
+
+        console.log(`[rejoin] ${userId}  old socket: ${oldSocketId}  → new socket: ${socket.id}`);
+
+        /* 1) 먼저 다른 참가자에게 떠났음을 알린다 */
+        io.to(roomId).emit('userLeft', { userId });
+
+        /* 2) 서버 맵/전역 매핑에서 제거 */
+        participants.delete(userId);
+        userSocketMap.delete(userId);
+
+        isRejoin = true; // 아래에서 userRejoined 이벤트 전송
       }
     }
 

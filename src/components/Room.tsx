@@ -178,12 +178,7 @@ export default function Room() {
 
     // 원격 피어 상태 주기적 업데이트를 위한 인터벌 설정
     const interval = setInterval(() => {
-      const remoteStreams = webRTCService.getRemoteStreams();
-      console.log('원격 피어 상태 확인:', remoteStreams);
-
-      if (remoteStreams.length > 0) {
-        setRemotePeers(remoteStreams);
-      }
+      setRemotePeers(webRTCService.getRemoteStreams()); // 길이에 상관없이 항상 세팅
     }, 1000);
 
     // 컴포넌트 언마운트 시 정리 작업
@@ -199,6 +194,28 @@ export default function Room() {
       clearInterval(interval);
     };
   }, [roomId, userId, nickname]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleUserLeft = ({ userId }: { userId: string }) => {
+      webRTCService.removePeerConnection(userId); // 이미 하고 있다면 중복 OK
+      setRemotePeers((prev) => prev.filter((p) => p.userId !== userId));
+    };
+
+    const handleDisconnect = () => {
+      // 소켓 연결이 끊겼을 때 처리 로직
+      console.log('연결이 끊겼습니다.');
+    };
+
+    socket.on('userLeft', handleUserLeft);
+    socket.on('disconnect', handleDisconnect);
+
+    return () => {
+      socket.off('userLeft', handleUserLeft);
+      socket.off('disconnect', handleDisconnect);
+    };
+  }, [socket]);
 
   // 소켓 이벤트 리스너 설정 및 정리
   useEffect(() => {
