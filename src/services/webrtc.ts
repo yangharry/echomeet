@@ -1001,30 +1001,6 @@ class WebRTCService {
     }
   }
 
-  // 모든 연결을 강제로 정리하는 메서드
-  private cleanupAllConnections() {
-    console.warn(`모든 연결 강제 정리 (현재 ${this.peerConnections.size}개)`);
-    // 모든 연결 종료
-    for (const [userId, { connection }] of this.peerConnections.entries()) {
-      try {
-        connection.close();
-        console.log(`강제 정리: ${userId} 연결 종료`);
-      } catch (e) {
-        console.error(`연결 종료 실패: ${userId}`, e);
-      }
-    }
-    // 맵 초기화
-    this.peerConnections.clear();
-    this.connectionCreationTime.clear();
-    this.makingOffer.clear();
-    this.ignoreOffer.clear();
-
-    // 가비지 컬렉션 힌트
-    setTimeout(() => {
-      console.log('가비지 컬렉션 힌트');
-    }, 1000);
-  }
-
   // 가장 오래된 연결 정리
   private cleanupOldestConnection() {
     if (this.peerConnections.size === 0) return;
